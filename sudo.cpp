@@ -79,6 +79,13 @@ namespace
         QTextStream(stdout)
             << QObject::tr("%1 version %2\n").arg(app_master).arg(app_version);
     }
+
+    inline void env_workarounds()
+    {
+        //cleanup environment
+        //pcmanfm-qt will not start if the DBUS_SESSION_BUS_ADDRESS is preserved
+        unsetenv("DBUS_SESSION_BUS_ADDRESS");
+    }
 }
 
 Sudo::Sudo()
@@ -132,7 +139,7 @@ int Sudo::main()
     if (BACK_NONE == mBackend)
     {
         //we were invoked through unknown link (or renamed binary)
-        usage(tr("%1: no backend choosen!").arg(app_master));
+        usage(tr("%1: no backend chosen!").arg(app_master));
         return 1;
     } else if (BACK_SU == mBackend && 1 < mArgs.size())
     {
@@ -163,7 +170,7 @@ int Sudo::main()
 void Sudo::child()
 {
     int params_cnt = 2 //1. su/sudo & last nullptr
-        + (BACK_SU == mBackend ? 1 : 0) //-c for su
+        + 1 //-c for su | -E for sudo
         + mArgs.size();
     std::unique_ptr<char const *[]> params{new char const *[params_cnt]};
     const char ** param_arg = params.get() + 1;
@@ -172,9 +179,12 @@ void Sudo::child()
     if (BACK_SU == mBackend)
     {
         program = su_prog.toStdString();
-        *(param_arg++) = "-c";
+        *(param_arg++) = "-c"; //run command
     } else
+    {
         program = sudo_prog.toStdString();
+        *(param_arg++) = "-E"; //preserve environment
+    }
 
     params[0] = program.c_str();
 
@@ -185,6 +195,8 @@ void Sudo::child()
         *(param_arg++) = a.c_str();
 
     *param_arg = nullptr;
+
+    env_workarounds();
 
     setsid(); //session leader
     execvp(params[0], const_cast<char **>(params.get()));
